@@ -59,19 +59,18 @@ class BlogDaemon(threading.Thread):
         return prev_date
 
     def run(self):
+        day_delta = datetime.timedelta(days=1)
+
         while True:
             prev_date = self.get_prev_date()
-
-            prev_year, prev_month, prev_day = prev_date.year, prev_date.month, prev_date.day
-
             now = datetime.datetime.now()
-            cur_year, cur_month, cur_day = now.year, now.month, now.day - 1
 
             print(time.ctime(), end=" ")
-            if prev_day != cur_day:
+            if prev_date.day != (now - day_delta).day:
+                now -= day_delta
                 print(datetime.datetime.now(), "Update Post")
 
-                prev_str = "%d%02d%02d" % (prev_year, prev_month, prev_day)
+                prev_str = "%d%02d%02d" % (now.year, now.month, now.day)
 
                 self.extract_result(prev_str)
 
@@ -83,8 +82,10 @@ class BlogDaemon(threading.Thread):
 
     def extract_result(self, str_date):
         data_list = self.scraper.extract_post(str_date, str_date)
-
-        send_all(data_list)
+        if len(data_list) != 0:
+            send_all(data_list)
+        else:
+            print("extract size is 0")
 
 
 # if __name__ == "__main__":
