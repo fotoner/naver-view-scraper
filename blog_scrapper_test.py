@@ -1,4 +1,4 @@
-from lib.naver_blog import BlogScraper
+from lib.scraper import BlogScraper
 import json
 
 blog = BlogScraper("+산후도우미 +후기")

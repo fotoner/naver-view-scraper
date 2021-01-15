@@ -9,3 +9,4 @@ ADD ./ ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 CMD ["python", "-u", "./main.py"]
+# TODO 도커파일에 셀레니움 관련 설치 코드 추가하기

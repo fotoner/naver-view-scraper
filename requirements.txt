@@ -2,3 +2,7 @@ requests~=2.25.0
 python-dateutil~=2.8.1
 beautifulsoup4~=4.9.3
 databases~=0.4.0
+python-dotenv~=0.15.0
+selenium~=3.141.0
+pytest~=6.2.1
+kss~=2.2.0.2
