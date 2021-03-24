@@ -57,8 +57,8 @@ class Daemon(metaclass=ABCMeta, threading.Thread):
                 print()
 
     def extract_days(self, prev_date, next_date):
-        prev_str = "%d%02d%02d" % (prev_date.year, prev_date.month, prev_date.day)
-        next_str = "%d%02d%02d" % (next_date.year, next_date.month, next_date.day)
+        prev_str = f"{prev_date.year}{prev_date.month:02d}{prev_date.day:02d}"
+        next_str = f"{next_date.year}{next_date.month:02d}{next_date.day:02d}"
 
         print(datetime.datetime.now(), prev_str + " / " + next_str)
 
@@ -77,8 +77,7 @@ class Daemon(metaclass=ABCMeta, threading.Thread):
             if prev_date.day != (now - day_delta).day:
                 now -= day_delta
                 print(datetime.datetime.now(), "Update Post")
-
-                prev_str = "%d%02d%02d" % (now.year, now.month, now.day)
+                prev_str = f"{now.year}{now.month:02}{now.day:02}"
 
                 self.extract_result(prev_str)
 

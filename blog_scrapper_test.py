@@ -1,7 +1,4 @@
 from lib.scraper import BlogScraper
-import json
 
-blog = BlogScraper("+산후도우미 +후기")
-result = blog.extract_post("20201101", "20201101")
-
-print(json.dumps(result, ensure_ascii=False))
+blog = BlogScraper("+코로나")
+result = blog.extract_post("202103014", "202103024")

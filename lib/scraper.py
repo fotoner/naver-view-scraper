@@ -10,7 +10,7 @@ import kss
 from abc import ABCMeta, abstractmethod
 from selenium import webdriver
 
-from urllib.parse import urlsplit, urlparse
+from urllib.parse import urlsplit, urlparse, parse_qs
 from bs4 import BeautifulSoup
 
 
@@ -18,16 +18,16 @@ class Scraper(metaclass=ABCMeta):
     SEARCH_URL = ''
 
     FAKE_HEADER = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36'
     }
     REQUEST_SLEEP_TIME = 1
 
     @abstractmethod
-    def init_scraper_by_type(self):
+    def scrap_detail(self, raw_url):
         pass
 
     @abstractmethod
-    def scrap_detail(self, raw_url):
+    def init_scraper_by_type(self):
         pass
 
     @abstractmethod
@@ -63,9 +63,10 @@ class Scraper(metaclass=ABCMeta):
 
         return parse_text
 
-    def __init__(self, search_query):
+    def __init__(self, search_query, name_include=True):
         self.search_query = search_query
         self.init_scraper_by_type()
+        self.name_include = name_include
 
     def year_scraping(self, start_year, end_year):
         url_list = []
@@ -182,10 +183,13 @@ class BlogScraper(Scraper):
 
             res = requests.get(BlogScraper.BLOG_URL, params=values, headers=BlogScraper.FAKE_HEADER)
 
-            html_data = BeautifulSoup(res.text, 'html.parser')
-            html_data = html_data.prettify(formatter='html')
+            html = BeautifulSoup(res.text, 'html.parser')
+            html_data = html.prettify(formatter='html')
 
-            return blog_id, content_id, html_data
+            raw_blog_number: str = html_data[html_data.find('blogNo') + 6:]
+            blog_number = raw_blog_number[raw_blog_number.find("'") + 1: raw_blog_number.find(";") - 1]
+
+            return blog_id, content_id, blog_number, html
 
         except Exception as e:
             print("ERROR: blog_post Fail")
@@ -202,7 +206,7 @@ class BlogScraper(Scraper):
             'post_blogurl_without': None,
             'dup_remove': 1,
             'start': start,  # start page
-            'nso': f'a:t,p:from{date_from}to{date_to}',
+            'nso': f'{"a:t," if self.name_include else ""}p:from{date_from}to{date_to}',
         }
 
         try:
@@ -214,10 +218,63 @@ class BlogScraper(Scraper):
             print(e)
             return None
 
+
+    def scrap_comment(self, raw_url, content_id, group_id):
+        cur_header = BlogScraper.FAKE_HEADER.copy()
+        cur_header['referer'] = raw_url
+
+        api_url = 'https://apis.naver.com/commentBox/cbox/web_naver_list_jsonp.json'
+        values = {
+            'ticket': 'blog',
+            'pool': 'cbox9',
+            '_callback': 'Res',
+            'lang': 'ko',
+            'objectId': f'{group_id}_201_{content_id}',
+            'pageSize': 50,
+            'indexSize': 10,
+            'groupId': group_id,
+            'listType': 'OBJECT',
+            'pageType': 'default',
+            'page': 1,
+            'initialize': 'true',
+            'useAltSort': 'true',
+            'replyPageSize': 10,
+            'showReply': 'true'
+        }
+
+        try:
+            res = requests.get(api_url, params=values, headers=cur_header)
+            json_dict = json.loads(res.text.strip()[4:-2])
+
+        except Exception as e:
+            print(e)
+            return []
+
+        if json_dict['code'] != '1000':
+            return []
+
+        comments = json_dict['result']['commentList']
+
+        result = [{
+            'username': item['userName'] if not item['secret'] else None,
+            'user_id': item['profileUserId'] if not item['secret'] else None,
+            'is_secret': item['secret'],
+            'is_delete': item['deleted'],
+            'is_reply': item['replyLevel'] == 2,
+            'contents': item['contents'],
+            'sticker': item['stickerId'] if item['stickerId'] else None,
+            'image': item['imageList'][0]['thumbnail'] if item['imageList'] else None
+        } for item in comments]
+
+        result.reverse()
+
+        return result
+
     def scrap_detail(self, raw_url):
         time.sleep(BlogScraper.REQUEST_SLEEP_TIME)
 
-        blog_id, content_id, html = self.blog_post(raw_url)
+        blog_id, content_id, blog_number, html = self.blog_post(raw_url)
+        comments = self.scrap_comment(raw_url, content_id, blog_number)
 
         if html is None:
             return None
@@ -257,7 +314,8 @@ class BlogScraper(Scraper):
                     'post_day': str(cur_date),
                     'nickname': nickname,
                     'parse_text': self.parse_article_main(target.get_text(' ')),
-                    'html': str(target)
+                    'html': str(target),
+                    'comments': comments
                 }
 
                 return result_data
@@ -275,21 +333,43 @@ class CafeScraper(Scraper):
             self.driver.switch_to.frame('cafe_main')
 
             html_data: BeautifulSoup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            # html_data = BeautifulSoup(html_data.prettify(formatter='html'), 'html.parser')
+
+            cafe_intro = html_data.find("a", class_="link_board")
+            query_dict = parse_qs(urlparse(cafe_intro.attrs["href"]).query)
+            cafe_id = query_dict['search.clubid'][0]
 
             url_info = urlparse(raw_url)
-            cafe_id, content_id = url_info.path[1:].split('/')  # ex) '/imsanbu/53910553'
+            cafe_name, content_id = url_info.path[1:].split('/')  # ex) '/imsanbu/53910553'
+            query_dict = parse_qs(url_info.query)
+            art = query_dict['art'][0]
 
-            return cafe_id, content_id, html_data
+            return cafe_name, content_id, art, cafe_id, html_data
 
         except Exception as e:
             print("ERROR: blog_post Fail")
             print(e)
             return None
 
+
+    def scrap_info(self, art, cafe_id, content_id):
+        api_url = f"https://apis.naver.com/cafe-web/cafe-articleapi/cafes/{cafe_id}/articles/{content_id}/comments/pages/1"
+        values = {
+            'art': art,
+        }
+
+        try:
+            res = requests.get(api_url, params=values)
+            json_dict = json.loads(res.text)
+
+        except Exception as e:
+            print(e)
+            return None
+
+        return json_dict
+
     def init_scraper_by_type(self):
         CafeScraper.SEARCH_URL = 'https://s.search.naver.com/p/cafe/search.naver'  #: 검색조건 설정
-        driver_path = '/usr/local/bin/chromedriver'
+        driver_path = './chromedriver'
 
         options = webdriver.ChromeOptions()
         options.add_argument('headless')
@@ -304,28 +384,39 @@ class CafeScraper(Scraper):
         self.driver.quit()
 
     def scrap_detail(self, raw_url):
-        cafe_id, content_id, html = self.cafe_post(raw_url)
+        cafe_name, content_id, art, cafe_id, html = self.cafe_post(raw_url)
 
         assert isinstance(html, BeautifulSoup)
-        nickname = html.find('a', class_='nickname').text.strip()
-        post_title = html.find('div', class_='ArticleTitle').find('h3', class_='title_text').text.strip()
-
         target = html.find('div', class_="se-main-container")
         target = html.find('div', class_="article_viewer") if target is None else target
 
-        cur_date = html.find('div', class_="article_info").find('span', class_='date').text.strip()
-        cur_date = self.date_parse(cur_date)
+        article_info = self.scrap_info(art, cafe_id, content_id)
+        raw_comments = article_info['comments']['items']
 
-        # TODO 댓글 파싱기능 넣기.
+        comment_list = [{
+            'username': item['writer']['nick'],
+            'user_id': item['writer']['id'],
+            'is_secret': False,
+            'is_deleted': item['isDeleted'],
+            'is_reply': item['isRef'],
+            'contents': item['content'],
+            'sticker': item['image']['url'] if 'image' in item else None,
+            'image': item['sticker']['url'] if 'sticker' in item else None,
+        } for item in raw_comments]
+
 
         result_data = {
-            'cafe_id': cafe_id,
+            'cafe_name': article_info['cafe']['name'],
+            'cafe_id': article_info['cafe']['id'],
+            'cafe_url': article_info['cafe']['url'],
             'content_id': content_id,
-            'post_title': post_title,
-            'post_day': str(cur_date),
-            'nickname': nickname,
+            'post_title': article_info['article']['subject'],
+            'post_day': datetime.datetime.fromtimestamp(article_info['article']['writeDate']/1000),
+            'nickname': article_info['article']['writer']['nick'],
+            'user_id': article_info['article']['writer']['id'],
             'parse_text': self.parse_article_main(target.get_text(' ')),
-            'html': str(target)
+            'html': str(target),
+            'comment_list': comment_list
         }
 
         return result_data
@@ -338,7 +429,7 @@ class CafeScraper(Scraper):
             'query': self.search_query,
             'start': start,
             'dup_remove': 1,
-            'nso': f'a:t,p:from{date_from}to{date_to}',
+            'nso': f'{"a:t," if self.name_include else ""}p:from{date_from}to{date_to}',
             'prmore': 1
         }
 
@@ -352,13 +443,7 @@ class CafeScraper(Scraper):
             return None
 
 
-
 if __name__ == "__main__":
-    blog = BlogScraper("+산후도우미 +후기")
+    blog = BlogScraper("+밀리시타")
 
-    result = blog.extract_post("20201101", "20201101")
-    # result = blog.search_post(1, "20200909", "20200910")
-    # result = blog.year_scraping(2010, 2020)
-    #
-    # with open('data_set.json', 'r', encoding='cp949') as f:
-    #     result = json.load(f)
+    result = blog.extract_post("20201101", "20201111")

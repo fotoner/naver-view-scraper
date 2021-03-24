@@ -36,21 +36,15 @@ class Endpoint(metaclass=ABCMeta):
 
 class BlogEndpoint(Endpoint):
     def upload_data(self, data):
-        uri = f'{self.__API_IP}/ml/blog/list'
-        return self.send_post(uri, data)
+        pass
 
     def get_last_update(self):
-        uri = f'{self.__API_IP}/article/blog/lastday'
-        res = self.send_get(uri)
-        return json.loads(res.text)
+        pass
 
 
 class CafeEndpoint(Endpoint):
     def upload_data(self, data):
-        uri = f'{self.__API_IP}/ml/cafe/list'
-        return self.send_post(uri, data)
+        pass
 
     def get_last_update(self):
-        uri = f'{self.__API_IP}/article/cafe/lastday'
-        res = self.send_get(uri)
-        return json.loads(res.text)
+        pass
